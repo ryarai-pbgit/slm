@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tinyswallow-1-5-b
+  namespace: default
+  labels:
+    app: tinyswallow-1_5b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tinyswallow-1-5-b
+  template:
+    metadata:
+      labels:
+        app: tinyswallow-1-5-b
+    spec:
+      volumes:
+      - name: cache-volume
+        persistentVolumeClaim:
+          claimName: tinyswallow-1-5-b
+      # vLLM needs to access the host's shared memory for tensor parallel inference.
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "2Gi"
+      containers:
+      - name: tinyswallow-1-5-b
+        image: vllm/vllm-openai:latest
+        command: ["/bin/sh", "-c"]
+        args: [
+          "vllm serve SakanaAI/TinySwallow-1.5B --trust-remote-code --enable-chunked-prefill --max_num_batched_tokens 1024"
+        ]
+        # env:
+        # - name: HF_TOKEN
+        #   valueFrom:
+        #     secretKeyRef:
+        #       name: hf-token-secret
+        #       key: token
+        ports:
+        - containerPort: 8000
+        resources:
+          limits:
+            cpu: "4"
+            memory: 12G
+            nvidia.com/gpu: "1"
+          requests:
+            cpu: "2"
+            memory: 12G
+            nvidia.com/gpu: "1"
+        volumeMounts:
+        - mountPath: /root/.cache/huggingface
+          name: cache-volume
+        - name: shm
+          mountPath: /dev/shm
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 5
