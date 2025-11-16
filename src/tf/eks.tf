@@ -1,27 +1,24 @@
 # aws eks update-kubeconfig --region ap-northeast-1 --name myslm20251113-eks
 module "eks" {
+  count   = local.eks_enabled ? 1 : 0
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 21.0" 
+  version = "~> 21.0"
 
   name                   = "${var.project_name}-eks"
   kubernetes_version     = "1.33"
   endpoint_public_access = true
 
   addons = {
-    coredns                = {}
+    coredns = {}
     eks-pod-identity-agent = {
       before_compute = true
     }
-    kube-proxy             = {}
-    vpc-cni                = {
-      before_compute = true
+    kube-proxy = {}
+    vpc-cni = {
+      before_compute              = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
-    aws-ebs-csi-driver = {
-      most_recent = true
-      service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
-    }    
   }
   # VPC設定
   vpc_id     = aws_vpc.main.id
@@ -73,6 +70,7 @@ module "eks" {
 
 # EBS CSI Driver用のIAMロール
 module "ebs_csi_irsa" {
+  count   = local.eks_enabled ? 1 : 0
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.0"
 
@@ -82,7 +80,7 @@ module "ebs_csi_irsa" {
 
   oidc_providers = {
     main = {
-      provider_arn               = module.eks.oidc_provider_arn
+      provider_arn               = module.eks[0].oidc_provider_arn
       namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
     }
   }
@@ -91,4 +89,22 @@ module "ebs_csi_irsa" {
     Environment = var.environment
     Project     = var.project_name
   }
+}
+
+# aws-ebs-csi-driver Addon
+resource "aws_eks_addon" "ebs_csi" {
+  count = local.eks_enabled ? 1 : 0
+
+  cluster_name                = module.eks[0].cluster_name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = module.ebs_csi_irsa[0].iam_role_arn
+
+  tags = {
+    Environment = var.environment
+    Project     = var.project_name
+  }
+
+  depends_on = [module.ebs_csi_irsa]
 }

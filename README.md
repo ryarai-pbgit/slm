@@ -29,6 +29,10 @@ docker run --runtime nvidia --gpus all \
 
 ["参考"](https://docs.vllm.ai/en/latest/deployment/docker/ "参考")
 
+### 2.1 TerraformでEC2構成を用意する
+
+`src/tf` 配下にEKSクラスタと同じVPC上へGPU EC2を1台起動するTerraform定義を追加した。
+
 ## 3. EKSによる推論サーバ構築
 
 ### 3.1 TerraformでEKSクラスタを作成する。
@@ -37,9 +41,11 @@ docker run --runtime nvidia --gpus all \
 
 [src/tf ディレクトリはこちら](src/tf)
 
+`terraform.tfvars` では `enable_ec2 = false`, `enable_eks = true` の状態で実行する。
+
 主な重要箇所
 
-アドオンには、`vpc-cni`と`aws-ebs-csi-driver`が必要
+アドオンには `vpc-cni` が必須で、`aws-ebs-csi-driver` は `aws_eks_addon.ebs_csi` で個別に適用する
 
 ```
   addons = {
@@ -47,17 +53,23 @@ docker run --runtime nvidia --gpus all \
     eks-pod-identity-agent = {
       before_compute = true
     }
-    kube-proxy             = {}
-    vpc-cni                = {
+    kube-proxy = {}
+    vpc-cni = {
       before_compute = true
       resolve_conflicts_on_create = "OVERWRITE"
       resolve_conflicts_on_update = "OVERWRITE"
     }
-    aws-ebs-csi-driver = {
-      most_recent = true
-      service_account_role_arn = module.ebs_csi_irsa.iam_role_arn
-    }    
   }
+```
+
+```
+resource "aws_eks_addon" "ebs_csi" {
+  cluster_name                = module.eks[0].cluster_name
+  addon_name                  = "aws-ebs-csi-driver"
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
+  service_account_role_arn    = module.ebs_csi_irsa[0].iam_role_arn
+}
 ```
 
 起動テンプレートでインスタンスのカスタマイズを行う。ディスクが200GBほど必要、`http_put_response_hop_limit`はAWS LBコントローラを乗せるつもりなので2にしておく

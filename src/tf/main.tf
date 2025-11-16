@@ -12,3 +12,7 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+locals {
+  eks_enabled = var.enable_eks && !var.enable_ec2
+}
